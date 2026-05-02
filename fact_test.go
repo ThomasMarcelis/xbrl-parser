@@ -108,3 +108,135 @@ func TestUnmarshalFact(t *testing.T) {
 		assert.EqualValues(t, 1.0/3.0, val)
 	})
 }
+
+func TestFactValidation(t *testing.T) {
+	unitRef := "u1"
+	precision := "3"
+	decimals := "2"
+	invalidPrecision := "-1"
+	invalidDecimals := "not-an-integer"
+
+	tests := []struct {
+		name    string
+		fact    Fact
+		wantErr string
+	}{
+		{
+			name: "fact requires context ref",
+			fact: Fact{
+				UnitRef:   &unitRef,
+				Precision: &precision,
+				ValueStr:  stringPtr("727"),
+			},
+			wantErr: "missing contextRef",
+		},
+		{
+			name: "non-fraction missing value",
+			fact: Fact{
+				ContextRef: "c1",
+				UnitRef:    &unitRef,
+				Precision:  &precision,
+			},
+			wantErr: "non-fraction fact missing value",
+		},
+		{
+			name: "non-fraction with precision and decimals",
+			fact: Fact{
+				ContextRef: "c1",
+				UnitRef:    &unitRef,
+				Precision:  &precision,
+				Decimals:   &decimals,
+				ValueStr:   stringPtr("727"),
+			},
+			wantErr: "non-fraction fact must have exactly one of precision or decimals",
+		},
+		{
+			name: "non-fraction with invalid precision",
+			fact: Fact{
+				ContextRef: "c1",
+				UnitRef:    &unitRef,
+				Precision:  &invalidPrecision,
+				ValueStr:   stringPtr("727"),
+			},
+			wantErr: "non-fraction fact has invalid precision",
+		},
+		{
+			name: "non-fraction with invalid decimals",
+			fact: Fact{
+				ContextRef: "c1",
+				UnitRef:    &unitRef,
+				Decimals:   &invalidDecimals,
+				ValueStr:   stringPtr("727"),
+			},
+			wantErr: "non-fraction fact has invalid decimals",
+		},
+		{
+			name: "non-numeric with precision",
+			fact: Fact{
+				ContextRef: "c1",
+				Precision:  &precision,
+				ValueStr:   stringPtr("not numeric"),
+			},
+			wantErr: "non-numeric fact cannot have precision or decimals",
+		},
+		{
+			name: "fraction with zero denominator",
+			fact: Fact{
+				ContextRef:  "c1",
+				UnitRef:     &unitRef,
+				Numerator:   floatPtr(1),
+				Denominator: floatPtr(0),
+			},
+			wantErr: "fraction fact denominator is zero",
+		},
+		{
+			name: "fraction with precision",
+			fact: Fact{
+				ContextRef:  "c1",
+				UnitRef:     &unitRef,
+				Precision:   &precision,
+				Numerator:   floatPtr(1),
+				Denominator: floatPtr(3),
+			},
+			wantErr: "fraction fact cannot have precision or decimals",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.fact.Validate()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+			assert.False(t, tt.fact.IsValid())
+		})
+	}
+}
+
+func TestNilFactValidation(t *testing.T) {
+	nilValue := true
+	fact := Fact{
+		XMLName:    xml.Name{Space: "myns", Local: "nilFact"},
+		Nil:        &nilValue,
+		ContextRef: "c1",
+	}
+
+	assert.Equal(t, FactTypeNil, fact.Type())
+	assert.NoError(t, fact.Validate())
+}
+
+func TestNumericValueMalformedFactReturnsError(t *testing.T) {
+	unitRef := "u1"
+	precision := "3"
+	fact := Fact{
+		ContextRef: "c1",
+		UnitRef:    &unitRef,
+		Precision:  &precision,
+	}
+
+	_, err := fact.NumericValue()
+	assert.Error(t, err)
+}
+
+func floatPtr(val float64) *float64 {
+	return &val
+}

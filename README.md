@@ -8,12 +8,14 @@ This library is based around the [XBRL 2.1 spec](https://www.xbrl.org/Specificat
 It implements support for parsing basic facts (not tuples of facts), contexts and units through the `xml.Unmarshaler` interface.
  
 See the package example in the godocs for how to unmarshal into the `XBRL` struct.
+You can also use `Parse`, `ParseReader`, or `Decode` as small convenience helpers around the same `encoding/xml` path.
 
-This library supports basic validation that checks for malformed facts and broken references between facts and contexts/units (see `XBRL.Validate()`),
+This library supports structural validation that checks malformed contexts, units, facts, duplicate IDs, unsupported scenarios, unsupported top-level base `item` and `tuple` elements, and broken references between facts and contexts/units (see `XBRL.Validate()`),
 but it does _not_ implement full semantic validation of XBRL documents.
 
 There are no abstractions added on-top of the XBRL data structure, which makes this library flexible and simple,
 but it also means you might have to read up a bit on how XBRL works to take full advantage of it.
+The parser preserves lower-level XML details such as root attributes, XML names, raw link/reference elements, and generic segment content for callers that need them.
 
 To give you a head start, here's some basics about XBRL:
 
@@ -52,7 +54,7 @@ The above fact doesn't directly tell us in which quarter EPS was `1.41`. That's 
 ### Contexts
 
 A [Context](https://www.xbrl.org/Specification/XBRL-2.1/REC-2003-12-31/XBRL-2.1-REC-2003-12-31+corrected-errata-2013-02-20.html#_4.7)
-describes a business entity, period of time, and an optional scenario (this library doesn't currently support scenarios, so we're going to gloss over them).  
+describes a business entity, period of time, and an optional scenario (this library preserves scenario XML, but does not interpret scenario semantics).
 
 When a fact references a context, it gives the fact more detail to help us understand what it means.
 

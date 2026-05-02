@@ -106,3 +106,68 @@ func TestUnmarshalUnit(t *testing.T) {
 		assert.Equal(t, "USD / feet * feet", unit.String())
 	})
 }
+
+func TestUnitValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		unit    Unit
+		wantErr string
+	}{
+		{
+			name:    "unit requires id",
+			unit:    Unit{Measures: Measures{{Value: "shares"}}},
+			wantErr: "unit missing id",
+		},
+		{
+			name:    "unit requires measure or divide",
+			unit:    Unit{ID: "u1"},
+			wantErr: "unit must have either measures or divide",
+		},
+		{
+			name: "unit cannot have measures and divide",
+			unit: Unit{
+				ID:       "u1",
+				Measures: Measures{{Value: "shares"}},
+				Divide: &Divide{
+					Numerator:   Measures{{Value: "iso4217:USD"}},
+					Denominator: Measures{{Value: "shares"}},
+				},
+			},
+			wantErr: "unit must have either measures or divide",
+		},
+		{
+			name: "divide requires denominator measures",
+			unit: Unit{
+				ID: "u1",
+				Divide: &Divide{
+					Numerator: Measures{{Value: "iso4217:USD"}},
+				},
+			},
+			wantErr: "divide missing denominator measures",
+		},
+		{
+			name: "measure requires value",
+			unit: Unit{
+				ID:       "u1",
+				Measures: Measures{{}},
+			},
+			wantErr: "measure missing value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.unit.Validate()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+			assert.False(t, tt.unit.IsValid())
+		})
+	}
+}
+
+func TestMeasureValuePreservesRawQName(t *testing.T) {
+	measure := Measure{Value: "iso4217:USD"}
+
+	assert.Equal(t, "iso4217:USD", measure.Value)
+	assert.Equal(t, "USD", measure.String())
+}

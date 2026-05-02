@@ -6,6 +6,7 @@ import (
 	"strconv"
 )
 
+// FactType describes the structural category of a parsed Fact.
 type FactType string
 
 const (
@@ -17,7 +18,7 @@ const (
 	// A non-numeric fact is guaranteed to have an XMLName, ContextRef, and ValueStr.
 	FactTypeNonNumeric FactType = "non_numeric"
 
-	// FactTypeNonFraction is a non-nil fact describing a numeric value that can precisely expressed as a simple value.
+	// FactTypeNonFraction is a non-nil fact describing a numeric value that can be precisely expressed as a simple value.
 	// A non-fraction fact is guaranteed to have an XMLName, ContextRef, UnitRef, ValueStr, and exactly one of Precision or Decimals.
 	//
 	// For example: <ci:capitalLeases contextRef="c1" unitRef="u1" precision="3">727432</ci:capitalLeases>
@@ -119,38 +120,115 @@ func (f Fact) Type() FactType {
 	return FactTypeNonNumeric
 }
 
-// IsValid confirms that f has at least the required fields that the FactType requires.
-// Note that this function is not strict about extra fields existing.
+// IsValid confirms that f has the structural fields required for its FactType.
 func (f Fact) IsValid() bool {
+	return f.Validate() == nil
+}
+
+// Validate checks that f has the structural fields required for its FactType.
+// It does not perform taxonomy-aware validation.
+func (f Fact) Validate() error {
 	// All facts must have a context ref
 	if f.ContextRef == "" {
-		return false
+		return errors.New("missing contextRef")
 	}
 
 	// Some types have particular rules beyond what Type() checks for that must be true to be considered valid.
 	switch f.Type() {
 	case FactTypeFraction:
-		// Fraction must have a non-zero Denominator
-		return *f.Denominator != 0
+		if f.UnitRef == nil || *f.UnitRef == "" {
+			return errors.New("fraction fact missing unitRef")
+		}
+		if f.Numerator == nil {
+			return errors.New("fraction fact missing numerator")
+		}
+		if f.Denominator == nil {
+			return errors.New("fraction fact missing denominator")
+		}
+		if *f.Denominator == 0 {
+			return errors.New("fraction fact denominator is zero")
+		}
+		if f.Precision != nil || f.Decimals != nil {
+			return errors.New("fraction fact cannot have precision or decimals")
+		}
 	case FactTypeNonFraction:
-		// NonFractions must have either a non-nil Precision or non-nil Decimals field
-		return (f.Precision == nil) != (f.Decimals == nil)
+		if f.UnitRef == nil || *f.UnitRef == "" {
+			return errors.New("non-fraction fact missing unitRef")
+		}
+		if f.ValueStr == nil {
+			return errors.New("non-fraction fact missing value")
+		}
+		if f.Numerator != nil || f.Denominator != nil {
+			return errors.New("non-fraction fact cannot have numerator or denominator")
+		}
+		if (f.Precision == nil) == (f.Decimals == nil) {
+			return errors.New("non-fraction fact must have exactly one of precision or decimals")
+		}
+		if f.Precision != nil && !isValidPrecision(*f.Precision) {
+			return errors.New("non-fraction fact has invalid precision")
+		}
+		if f.Decimals != nil && !isValidDecimals(*f.Decimals) {
+			return errors.New("non-fraction fact has invalid decimals")
+		}
+		if _, err := strconv.ParseFloat(*f.ValueStr, 64); err != nil {
+			return err
+		}
 	case FactTypeNonNumeric:
-		return f.ValueStr != nil
-	default:
+		if f.ValueStr == nil {
+			return errors.New("non-numeric fact missing value")
+		}
+		if f.UnitRef != nil {
+			return errors.New("non-numeric fact cannot have unitRef")
+		}
+		if f.Precision != nil || f.Decimals != nil {
+			return errors.New("non-numeric fact cannot have precision or decimals")
+		}
+		if f.Numerator != nil || f.Denominator != nil {
+			return errors.New("non-numeric fact cannot have numerator or denominator")
+		}
+	}
+
+	return nil
+}
+
+func isValidPrecision(precision string) bool {
+	if precision == "INF" {
 		return true
 	}
+
+	value, err := strconv.Atoi(precision)
+	return err == nil && value >= 0
+}
+
+func isValidDecimals(decimals string) bool {
+	if decimals == "INF" {
+		return true
+	}
+
+	_, err := strconv.Atoi(decimals)
+	return err == nil
 }
 
 // NumericValue attempts to return the numeric value this fact represents.
-// This function returns
 // If this fact is a fraction type, this function returns the value of numerator / denominator.
 // Note that fraction type facts generally cannot be precisely represented as a float64 and may have some rounding error.
 func (f Fact) NumericValue() (float64, error) {
 	switch f.Type() {
 	case FactTypeFraction:
+		if f.Numerator == nil {
+			return 0, errors.New("fraction fact missing numerator")
+		}
+		if f.Denominator == nil {
+			return 0, errors.New("fraction fact missing denominator")
+		}
+		if *f.Denominator == 0 {
+			return 0, errors.New("fraction fact denominator is zero")
+		}
 		return *f.Numerator / *f.Denominator, nil
 	case FactTypeNonFraction:
+		if f.ValueStr == nil {
+			return 0, errors.New("non-fraction fact missing value")
+		}
 		return strconv.ParseFloat(*f.ValueStr, 64)
 	default:
 		return 0, ErrNonNumericFactType
